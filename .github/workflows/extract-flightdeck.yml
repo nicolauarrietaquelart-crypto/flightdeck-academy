@@ -1,0 +1,47 @@
+name: Extract FlightDeck application
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Extract uploaded ZIP safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, zipfile, shutil, pathlib
+          archive=pathlib.Path('FlightDeck_Academy_Cloudflare_v2.zip')
+          if not archive.is_file(): raise SystemExit('ZIP not found')
+          root=pathlib.Path.cwd().resolve()
+          with zipfile.ZipFile(archive) as z:
+              names=[n for n in z.namelist() if not n.endswith('/')]
+              prefix='flightdeck-academy/' if names and all(n.startswith('flightdeck-academy/') for n in names) else ''
+              for info in z.infolist():
+                  if info.is_dir(): continue
+                  rel=info.filename[len(prefix):] if prefix else info.filename
+                  if not rel or rel.startswith('/') or '\\' in rel: raise SystemExit('Unsafe archive path')
+                  parts=pathlib.PurePosixPath(rel).parts
+                  if '..' in parts or '.git' in parts or '.github' in parts: raise SystemExit('Unsafe archive path')
+                  target=(root/rel).resolve()
+                  if not target.is_relative_to(root): raise SystemExit('Unsafe archive path')
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  with z.open(info) as src,open(target,'wb') as dst: shutil.copyfileobj(src,dst)
+          if not (root/'index.html').exists(): raise SystemExit('index.html not found after extraction')
+          PY
+      - name: Commit extracted application
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- . ':!FlightDeck_Academy_Cloudflare_v2.zip'
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Extract FlightDeck application from uploaded ZIP"
+            git push
+          fi
