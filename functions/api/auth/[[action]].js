@@ -6,7 +6,10 @@ async function passwordHash(password,salt){const key=await crypto.subtle.importK
 const json=(obj,status=200,headers={})=>new Response(JSON.stringify(obj),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',...headers}});
 const cookie=(token,maxAge)=>`study_session=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
 async function current(request,db){const token=request.headers.get('Cookie')?.match(/(?:^|;\s*)study_session=([a-f0-9]{64})/)?.[1];if(!token)return null;return db.prepare('SELECT users.id,users.username,users.email FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires_at>?').bind(await digest(token),Date.now()).first()}
-export async function onRequest({request,env,params}){
+export async function onRequest(context){
+ try { return await handleAuth(context) } catch (error) { console.error('FlightDeck authentication failure:', error); return json({error:'Authentication service error. Verify that D1 migrations have been applied and try again.'},500) }
+}
+async function handleAuth({request,env,params}){
  const db=env.DB;if(!db)return json({error:'Database not configured. Bind a D1 database as DB.'},503);
  const action=params.action?.[0]||'';const method=request.method;
  if(method==='GET'&&action==='me'){const user=await current(request,db);return json({user:user||null})}
