@@ -57,7 +57,7 @@ function loadImportedQuestions(){try{let incoming=JSON.parse(localStorage.getIte
 async function importQuestions(file){if(!file)return;try{const parsed=JSON.parse(await file.text());if(!Array.isArray(parsed))throw Error('Expected an array of questions');let old=JSON.parse(localStorage.getItem(IMPORT_BANK_KEY)||'[]');let known=new Set(BANK.map(q=>q.id));let valid=[];for(let q of parsed){if(q&&typeof q.id==='string'&&typeof q.question==='string'&&Array.isArray(q.options)&&Number.isInteger(q.answer)&&q.answer>=0&&q.answer<q.options.length&&!known.has(q.id)){valid.push(q);known.add(q.id)}}if(!valid.length){alert('No new questions found. They may already be imported.');return}localStorage.setItem(IMPORT_BANK_KEY,JSON.stringify([...old,...valid]));BANK.push(...valid);alert('Imported '+valid.length+' questions: '+valid.filter(q=>q.source==='importTECH').length+' Technical and '+valid.filter(q=>q.source==='importSOP').length+' SOP.');render()}catch(e){alert('Import failed: '+e.message)}}
 const KEY='b737academy_v2';let user=null,db={attempts:[],seen:{}};function accountKey(){return user?'b737academy_account_'+user.id:KEY}function loadAccount(){try{let x=JSON.parse(localStorage.getItem(accountKey()));db=x&&Array.isArray(x.attempts)?x:{attempts:[],seen:{}}}catch{db={attempts:[],seen:{}}}if(!db.seen||typeof db.seen!=='object')db.seen={}}
 const DRAFT_KEY='b737academy_active_v1';function draftKey(){return user?'b737academy_draft_'+user.id:DRAFT_KEY}
-const save=()=>{try{localStorage.setItem(accountKey(),JSON.stringify(db))}catch(e){alert('Unable to save data. Please export a backup.')}};
+const save=()=>{try{localStorage.setItem(accountKey(),JSON.stringify(db));scheduleCloudSync()}catch(e){alert('Unable to save data. Please export a backup.')}};
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const grp=id=>id==='sop123'||id==='sop4'||id==='sop5'||id==='importSOP'?'sop':id==='tech1'||id==='tech2'||id==='importTECH'?'tech':id;
 const questionGroup=q=>q.source==='sop5'&&!/^SOP(?:\s|$)/i.test(q.category)?'tech':grp(q.source);
@@ -105,7 +105,37 @@ function settings(){$('app').innerHTML=head('PREFERENCES','Settings','Manage you
 function resetStats(){if(!confirm('Delete ALL test history, answers and statistics? This cannot be undone.'))return;if(!confirm('Final confirmation: permanently reset your study progress?'))return;db={attempts:[],seen:{}};session=null;stopTimer();clearDraft();save();page='home';render()}
 function backup(){let blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='B737_Study_Backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 async function restore(file){if(!file)return;try{let x=JSON.parse(await file.text());if(!Array.isArray(x.attempts))throw Error();if(confirm('Replace your current records with this backup?')){db=x;if(!db.seen)db.seen={};session=null;stopTimer();clearDraft();save();render()}}catch(e){alert('Invalid backup file')}}
-// Single-user mode: no authentication or network requests.
+
+/* Shared D1 progress: retain browser copies and merge by attempt id. */
+let cloudRevision=0,cloudReady=false,cloudBusy=false,cloudTimer=null;
+function mergeStudyRecords(remote){
+ const local=db,all=new Map();
+ for(const a of [...(remote?.attempts||[]),...(local.attempts||[])])if(a&&typeof a==='object')all.set(String(a.id??JSON.stringify([a.date,a.group,a.total])),a);
+ const attempts=[...all.values()].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ return {attempts,seen:{...(remote?.seen||{}),...(local.seen||{})}};
+}
+async function syncCloudProgress(){
+ if(cloudBusy)return;cloudBusy=true;
+ try{
+  const response=await fetch('/api/progress',{cache:'no-store'});
+  if(!response.ok)throw Error('Cloud sync unavailable: '+response.status);
+  const remote=await response.json();cloudRevision=remote.revision||0;
+  const merged=mergeStudyRecords(remote.data);
+  const changed=JSON.stringify(merged)!==JSON.stringify(remote.data);
+  db=merged;save();
+  if(changed){
+   const written=await fetch('/api/progress',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({revision:cloudRevision,data:merged})});
+   if(written.status===409){cloudReady=true;return}
+   if(!written.ok)throw Error('Cloud save unavailable: '+written.status);
+   cloudRevision=(await written.json()).revision;
+  }
+  cloudReady=true;
+  if(page==='home'||page==='history'||page==='analysis'||page==='settings')render();
+ }catch(e){console.warn(e.message)}
+ finally{cloudBusy=false}
+}
+function scheduleCloudSync(){if(cloudTimer)clearTimeout(cloudTimer);cloudTimer=setTimeout(syncCloudProgress,1200)}
+\n// Single shared progress: no login. Visitors share the same cloud data.
 // Migrate previously saved NICO data on this browser, without overwriting existing progress.
 function initializeLocalStudy(){
  try{
@@ -114,7 +144,7 @@ function initializeLocalStudy(){
   if(!localStorage.getItem(KEY)&&localStorage.getItem(old))localStorage.setItem(KEY,localStorage.getItem(old));
   if(!localStorage.getItem(DRAFT_KEY)&&localStorage.getItem(oldDraft))localStorage.setItem(DRAFT_KEY,localStorage.getItem(oldDraft));
  }catch(e){console.warn('Unable to migrate prior local progress',e)}
- loadImportedQuestions();loadAccount();restoreDraft();render();loadRemoteQuestions();if(session)startTimer();
+ loadImportedQuestions();loadAccount();restoreDraft();render();loadRemoteQuestions();syncCloudProgress();window.addEventListener('focus',syncCloudProgress);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncCloudProgress()});setInterval(()=>{if(!document.hidden)syncCloudProgress()},30000);if(session)startTimer();
 }
 
 function animateStudyContent(questionOnly=false){
