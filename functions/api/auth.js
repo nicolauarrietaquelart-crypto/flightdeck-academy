@@ -20,7 +20,7 @@ async function handleAuth(context){
  if(action==='logout'){const token=cookie(request);if(token)await db.prepare('DELETE FROM flightdeck_sessions WHERE token_hash=?').bind(await digest(token)).run();return json({ok:true},200,{'set-cookie':cookieSet('',0)})}
  const username=String(body.username||'').trim().toLowerCase(),password=String(body.password||'');
  const validUsername=/^[a-z0-9._-]{3,32}$/.test(username),validEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username)&&username.length<=254;
- if((!validUsername&&!validEmail)||password.length<10||password.length>128)return json({error:'Enter a valid username or email and a password of at least 10 characters.'},400);
+ if((!validUsername&&!validEmail)||password.length<8||password.length>128)return json({error:'Enter a valid username or email and a password of at least 8 characters.'},400);
  let user;
  if(action==='register'){
   const salt=random(),id=crypto.randomUUID(),hash=await passwordHash(password,salt);
