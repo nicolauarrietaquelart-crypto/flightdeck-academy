@@ -55,7 +55,22 @@ async function showFcomForQuestion(q){
 const IMPORT_BANK_KEY='flightdeck_imported_questions_v1';
 function loadImportedQuestions(){try{let incoming=JSON.parse(localStorage.getItem(IMPORT_BANK_KEY)||'[]');if(!Array.isArray(incoming))return;let existing=new Set(BANK.map(q=>q.id));for(let q of incoming){if(q&&typeof q.id==='string'&&typeof q.question==='string'&&Array.isArray(q.options)&&Number.isInteger(q.answer)&&q.answer>=0&&q.answer<q.options.length&&!existing.has(q.id)){BANK.push(q);existing.add(q.id)}}}catch(e){console.warn('Could not load imported questions',e)}}
 async function importQuestions(file){if(!file)return;try{const parsed=JSON.parse(await file.text());if(!Array.isArray(parsed))throw Error('Expected an array of questions');let old=JSON.parse(localStorage.getItem(IMPORT_BANK_KEY)||'[]');let known=new Set(BANK.map(q=>q.id));let valid=[];for(let q of parsed){if(q&&typeof q.id==='string'&&typeof q.question==='string'&&Array.isArray(q.options)&&Number.isInteger(q.answer)&&q.answer>=0&&q.answer<q.options.length&&!known.has(q.id)){valid.push(q);known.add(q.id)}}if(!valid.length){alert('No new questions found. They may already be imported.');return}localStorage.setItem(IMPORT_BANK_KEY,JSON.stringify([...old,...valid]));BANK.push(...valid);alert('Imported '+valid.length+' questions: '+valid.filter(q=>q.source==='importTECH').length+' Technical and '+valid.filter(q=>q.source==='importSOP').length+' SOP.');render()}catch(e){alert('Import failed: '+e.message)}}
-const KEY='b737academy_v2';let user=null,db={attempts:[],seen:{}};function accountKey(){return user?'b737academy_account_'+user.id:KEY}function loadAccount(){try{let x=JSON.parse(localStorage.getItem(accountKey()));db=x&&Array.isArray(x.attempts)?x:{attempts:[],seen:{}}}catch{db={attempts:[],seen:{}}}if(!db.seen||typeof db.seen!=='object')db.seen={}}
+const KEY='b737academy_v2';let user=null,db={attempts:[],seen:{}};function accountKey(){return user?'b737academy_account_'+user.id:KEY}function loadAccount(){
+ const valid=x=>x&&typeof x==='object'&&Array.isArray(x.attempts);
+ const safeRead=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}};
+ const current=safeRead(accountKey()),keys=[accountKey(),'b737academy_v2','b737academy_account_nico-initial','b737academy_account_nico','b737academy_v1','b737academy'];
+ try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&/^b737academy_account_/.test(k))keys.push(k)}}catch(e){}
+ const records=[],seen={},attemptIds=new Set();
+ for(const k of [...new Set(keys)]){
+  const x=safeRead(k);if(!valid(x))continue;
+  for(const a of x.attempts){if(!a||typeof a!=='object')continue;const id=String(a.id??JSON.stringify([a.date,a.group,a.total,a.score]));if(!attemptIds.has(id)){attemptIds.add(id);records.push(a)}}
+  if(x.seen&&typeof x.seen==='object')Object.assign(seen,x.seen);
+ }
+ records.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ db={...(valid(current)?current:{}),attempts:records,seen};
+ if(!db.seen||typeof db.seen!=='object')db.seen={};
+ try{localStorage.setItem(accountKey(),JSON.stringify(db))}catch(e){console.warn('Progress could not be persisted',e)}
+}
 const DRAFT_KEY='b737academy_active_v1';function draftKey(){return user?'b737academy_draft_'+user.id:DRAFT_KEY}
 const save=()=>{try{localStorage.setItem(accountKey(),JSON.stringify(db))}catch(e){alert('Unable to save data. Please export a backup.')}};
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -81,7 +96,7 @@ function persistDraft(){if(!session)return;try{localStorage.setItem(draftKey(),J
 function clearDraft(){try{localStorage.removeItem(draftKey())}catch(e){}}
 function stopTimer(){if(tick){clearInterval(tick);tick=null}}
 function startTimer(){stopTimer();if(!session||session.mode!=='mock')return;const update=()=>{if(!session)return;const remaining=session.deadline-Date.now();const el=$('time');if(el){el.textContent=clock(Math.max(0,remaining));el.classList.toggle('danger',remaining<300000)}if(remaining<=0)finish(true)};update();if(session)tick=setInterval(update,1000)}
-function restoreDraft(){try{let d=JSON.parse(localStorage.getItem(draftKey()));if(!d||!Array.isArray(d.questions)||!Array.isArray(d.answers))return;let questions=d.questions.map(id=>BANK.find(q=>q.id===(typeof id==='string'?id:id?.id)));if(questions.some(q=>!q)||questions.length!==d.answers.length)throw Error('Invalid saved questions');session={...d,questions,written:d.written||{},selfGrades:d.selfGrades||{},i:Math.min(Math.max(Number(d.i)||0,0),questions.length-1)};if(session.mode==='mock'&&session.deadline<=Date.now()){finish(true);return}page='home'}catch(e){console.warn('Saved test could not be restored',e);clearDraft()}}
+function restoreDraft(){try{let d=JSON.parse(localStorage.getItem(draftKey()));if(!d||!Array.isArray(d.questions)||!Array.isArray(d.answers))return;let questions=d.questions.map(id=>BANK.find(q=>q.id===(typeof id==='string'?id:id?.id)));if(questions.some(q=>!q)||questions.length!==d.answers.length)throw Error('Invalid saved questions');session={...d,questions,written:d.written||{},selfGrades:d.selfGrades||{},i:Math.min(Math.max(Number(d.i)||0,0),questions.length-1)};if(session.mode==='mock'&&session.deadline<=Date.now()){finish(true);return}page='home'}catch(e){console.warn('Saved test could not be restored; original draft preserved for recovery',e)}}
 function resumeTest(){if(!session)return;page='quiz';render();startTimer()}
 function discardTest(){if(!session||!confirm('Discard this unfinished test? This cannot be undone.'))return;session=null;stopTimer();clearDraft();page='history';render()}
 function clock(ms){let sec=Math.ceil(Math.max(0,ms)/1000);return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`}
@@ -112,7 +127,7 @@ function initializeLocalStudy(){
   const old='b737academy_account_nico-initial';
   const oldDraft='b737academy_draft_nico-initial';
   if(!localStorage.getItem(KEY)&&localStorage.getItem(old))localStorage.setItem(KEY,localStorage.getItem(old));
-  if(!localStorage.getItem(DRAFT_KEY)&&localStorage.getItem(oldDraft))localStorage.setItem(DRAFT_KEY,localStorage.getItem(oldDraft));
+  if(!localStorage.getItem(DRAFT_KEY)&&localStorage.getItem(oldDraft))localStorage.setItem(DRAFT_KEY,localStorage.getItem(oldDraft));\n  if(!localStorage.getItem(DRAFT_KEY)){for(const k of ['b737academy_active_v1','b737academy_draft_nico']){if(localStorage.getItem(k)){localStorage.setItem(DRAFT_KEY,localStorage.getItem(k));break}}}
  }catch(e){console.warn('Unable to migrate prior local progress',e)}
  loadImportedQuestions();loadAccount();restoreDraft();render();loadRemoteQuestions();if(session)startTimer();
 }
