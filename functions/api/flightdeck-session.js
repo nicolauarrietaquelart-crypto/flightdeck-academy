@@ -11,8 +11,10 @@ async function currentUser(db,request){const token=cookie(request);if(!/^[a-f0-9
 const cookieSet=(token,maxAge)=>'fd_session='+token+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age='+maxAge;
 async function handleAuth(context){
  const db=context.env.DB;if(!db)return json({error:'Database unavailable'},503);
+ let stage='database setup';
  try{
  await setup(db);
+ stage='request processing';
  const request=context.request,method=request.method;
  if(method==='GET'){const user=await currentUser(db,request);return json({user:user||null})}
  if(method!=='POST')return json({error:'Method not allowed'},405);
@@ -23,7 +25,7 @@ async function handleAuth(context){
  if((!validUsername&&!validEmail)||password.length<10||password.length>128)return json({error:'Enter a valid username or email and a password of at least 10 characters.'},400);
  let user;
  if(action==='register'){
-  const salt=random(),id=crypto.randomUUID(),hash=await passwordHash(password,salt);
+  stage='password hashing';const salt=random(),id=crypto.randomUUID(),hash=await passwordHash(password,salt);stage='account creation';
   try{await db.prepare('INSERT INTO flightdeck_users (id,username,salt,password_hash,created_at) VALUES (?,?,?,?,?)').bind(id,username,salt,hash,new Date().toISOString()).run()}catch{return json({error:'Username already taken'},409)}
   user={id,username};
  }else if(action==='login'){
@@ -32,9 +34,9 @@ async function handleAuth(context){
   const hash=await passwordHash(password,row.salt);if(!equal(hash,row.password_hash))return json({error:'Invalid username or password'},401);
   user={id:row.id,username:row.username};
  }else return json({error:'Invalid action'},400);
- const token=random();await db.prepare('INSERT INTO flightdeck_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)').bind(await digest(token),user.id,Date.now()+30*86400000).run();
+ stage='session creation';const token=random();await db.prepare('INSERT INTO flightdeck_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)').bind(await digest(token),user.id,Date.now()+30*86400000).run();
  return json({user},200,{'set-cookie':cookieSet(token,30*86400)});
- }catch(e){return json({error:'Authentication unavailable'},500)}
+ }catch(e){console.error('FlightDeck authentication failed at '+stage,e);return json({error:'Authentication unavailable at '+stage,code:'AUTH_'+stage.toUpperCase().replace(/[^A-Z]+/g,'_')},500)}
 }
 
 // Explicit method handlers avoid Pages route/method mismatches.
