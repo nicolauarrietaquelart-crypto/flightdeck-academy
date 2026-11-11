@@ -86,7 +86,7 @@ function resumeTest(){if(!session)return;page='quiz';render();startTimer()}
 function discardTest(){if(!session||!confirm('Discard this unfinished test? This cannot be undone.'))return;session=null;stopTimer();clearDraft();page='history';render()}
 function clock(ms){let sec=Math.ceil(Math.max(0,ms)/1000);return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`}
 function cleanQuestionTitle(t){return String(t||'').replace(/^\s*(?:question\s*)?\d{1,4}\s*[).:-]\s*/i,'').trim()}
-function quizView(){if(!session)return go('home');let s=session,q=s.questions[s.i],a=s.answers[s.i],done=a!==null,open=isWritten(q),isPractice=s.mode==='practice',text=s.written[s.i]||'',reveal=!!s.selfGrades['reveal-'+s.i],self=s.selfGrades[s.i];let answered=s.answers.filter(x=>x!==null).length;let options=q.options.map((v,i)=>({v,i})).filter(x=>x.v&&!/^-{5,}$/.test(x.v));let correct=a===q.answer;
+function quizView(){if(!session)return go('home');let s=session,q=s.questions[s.i],a=s.answers[s.i],done=a!==null,open=isWritten(q),isPractice=s.mode==='practice',text=s.written[s.i]||'',reveal=!!s.selfGrades['reveal-'+s.i],self=s.selfGrades[s.i];if(!db.seen[q.id]){db.seen[q.id]=true;save()}let answered=s.answers.filter(x=>x!==null).length;let options=q.options.map((v,i)=>({v,i})).filter(x=>x.v&&!/^-{5,}$/.test(x.v));let correct=a===q.answer;
 $('app').innerHTML=`<div class="topline"><div><div class="eyebrow">${isPractice?'PRACTICE MODE':'MOCK EXAM'}</div><h2 style="margin:4px 0">${esc(gname(s.group))}</h2></div><div class="timer" id="time">${isPractice?'UNTIMED':clock(s.deadline-Date.now())}</div></div><div class="quiz-progress-header"><span>Progress: <strong class="count">${answered}/${s.questions.length}</strong> questions answered</span><span class="pct">${Math.round(answered/s.questions.length*100)}%</span></div><div class="progress"><div style="width:${answered/s.questions.length*100}%"></div></div><div class="small" style="margin:-7px 0 16px">Question ${s.i+1} of ${s.questions.length}</div><div class="card"><span class="tag">${esc(q.category)}</span><div class="question">${esc(cleanQuestionTitle(q.question))}</div>${open?`<label class="field">Your written answer<textarea id="written" class="textanswer" placeholder="Type your answer here…" oninput="saveWritten(this.value)" ${isPractice&&reveal?'readonly':''}>${esc(text)}</textarea></label>${isPractice?(!reveal?`<div class="toolbar"><button class="btn" onclick="revealWritten()" ${text.trim()?'':'disabled'}>Save & compare answer</button></div>`:`<div class="feedback"><strong>Reference answer</strong><p>${esc(q.options[q.answer]||'Not available')}</p><p class="small">Compare your written answer with the original reference answer, then assess yourself.</p><div class="toolbar"><button class="btn ${self===true?'':'secondary'}" onclick="gradeWritten(true)">✓ I got it right</button><button class="btn ${self===false?'':'secondary'}" onclick="gradeWritten(false)">✕ I got it wrong</button></div></div>`):`<p class="small">Your written answer is saved in this session. The reference answer stays hidden until the mock exam ends.</p>`}`:options.map(({v,i})=>`<button class="answer ${isPractice&&done?(i===q.answer?'correct':i===a?'wrong':''):a===i?'selected':''}" onclick="respond(${i})" ${isPractice&&done?'disabled':''}><span class="letter">${'ABCDE'[i]||i+1}</span><span>${esc(v)}</span></button>`).join('')}${!open&&isPractice&&done?`<div class="feedback ${correct?'good':'bad'}"><strong>${correct?'✓ Correct':'✕ Incorrect'}</strong><p><b>Correct answer:</b> ${esc(q.options[q.answer]||'Not available')}</p><div class="small">${q.explanation?'Original explanation: '+esc(q.explanation):'No original explanation was provided for this question. Check the current FCOM / SOP.'}</div><div id="fcom-photo-panel"></div></div>`:''}<div class="topline" style="margin-top:24px"><button class="btn secondary" onclick="move(-1)" ${s.i===0?'disabled':''}>← Previous</button>${s.i===s.questions.length-1?`<button class="btn" onclick="confirmFinish()">Finish exam</button>`:`<button class="btn" onclick="move(1)" ${isPractice&&!done?'disabled':''}>Next →</button>`}</div></div><div class="toolbar"><button class="btn ghost" onclick="confirmFinish()">Finish session</button>${!isPractice?'<span class="small">You can change your answers until the exam is submitted. No feedback is shown.</span>':''}</div>`;animateStudyContent(true);if(isPractice&&(done||(open&&reveal)))showFcomForQuestion(q)}
 function saveWritten(v){if(!session)return;session.written[session.i]=v;if(session.mode==='practice'){let b=document.querySelector('button[onclick="revealWritten()"]');if(b)b.disabled=!v.trim()}else if(v.trim())session.answers[session.i]='written';else session.answers[session.i]=null;persistDraft()}
 function revealWritten(){if(!session||!String(session.written[session.i]||'').trim())return;session.selfGrades['reveal-'+session.i]=true;persistDraft();quizView()}
@@ -107,7 +107,7 @@ function backup(){let blob=new Blob([JSON.stringify(db,null,2)],{type:'applicati
 async function restore(file){if(!file)return;try{let x=JSON.parse(await file.text());if(!Array.isArray(x.attempts))throw Error();if(confirm('Replace your current records with this backup?')){db=x;if(!db.seen)db.seen={};session=null;stopTimer();clearDraft();save();render()}}catch(e){alert('Invalid backup file')}}
 
 /* Shared D1 progress. Server is authoritative after first import. */
-let cloudRevision=0,cloudReady=false,cloudBusy=false,cloudTimer=null,cloudResetPending=false,cloudDirty=false;
+let cloudRevision=0,cloudReady=false,cloudBusy=false,cloudTimer=null,cloudResetPending=false,cloudDirty=false,cloudResetMarker=localStorage.getItem('flightdeck_cloud_reset_marker')||null;
 function localDraft(){try{return JSON.parse(localStorage.getItem(draftKey())||'null')}catch{return null}}
 function applyCloudDraft(d){
  if(!d){session=null;stopTimer();localStorage.removeItem(draftKey());return}
@@ -133,7 +133,7 @@ async function syncCloudProgress(){
    const remote=await response.json();cloudRevision=remote.revision||0;
    const stored=remote.data;
    if(!cloudReady&&!cloudDirty&&!cloudResetPending&&stored){
-    db={attempts:stored.attempts||[],seen:stored.seen||{}};
+    db={attempts:stored.attempts||[],seen:stored.seen||{}};cloudResetMarker=stored.resetMarker||null;localStorage.setItem('flightdeck_cloud_reset_marker',cloudResetMarker||'');
     localStorage.setItem(accountKey(),JSON.stringify(db));
     if(Object.prototype.hasOwnProperty.call(stored,'draft'))applyCloudDraft(stored.draft);
     cloudReady=true;
@@ -152,16 +152,16 @@ async function syncCloudProgress(){
     }
     cloudReady=true;return;
    }
-   const payload=cloudResetPending?{attempts:[],seen:{},draft:null}:{
-    attempts:mergeAttempts(stored?.attempts,db.attempts),
-    seen:{...(stored?.seen||{}),...db.seen},
+   const remoteWasReset=!!stored?.resetMarker&&stored.resetMarker!==cloudResetMarker;\n   const payload=cloudResetPending?{attempts:[],seen:{},draft:null,resetMarker:String(Date.now())}:{
+    attempts:mergeAttempts(stored?.attempts,remoteWasReset?[]:db.attempts),
+    seen:{...(stored?.seen||{}),...(remoteWasReset?{}:db.seen)},
     draft:localDraft()
    };
    const written=await fetch('/api/progress',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({revision:cloudRevision,data:payload})});
    if(written.status===409)continue;
    if(!written.ok)throw Error('Cloud save unavailable: '+written.status);
    cloudRevision=(await written.json()).revision;
-   db={attempts:payload.attempts,seen:payload.seen};
+   db={attempts:payload.attempts,seen:payload.seen};cloudResetMarker=payload.resetMarker||null;localStorage.setItem('flightdeck_cloud_reset_marker',cloudResetMarker||'');
    localStorage.setItem(accountKey(),JSON.stringify(db));
    cloudDirty=false;cloudResetPending=false;cloudReady=true;
    if(page!=='quiz')render();
