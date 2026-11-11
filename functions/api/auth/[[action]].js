@@ -1,20 +1,15 @@
-import { createHmac } from 'node:crypto';
+import { pbkdf2 } from 'node:crypto';
 const enc = new TextEncoder();
 const bytesToHex = b => [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
 const randomHex = n => bytesToHex(crypto.getRandomValues(new Uint8Array(n)));
 const digest = async x => bytesToHex(await crypto.subtle.digest('SHA-256',enc.encode(x)));
 async function passwordHash(password,salt){
- // PBKDF2-HMAC-SHA256, 210000 iterations, 32 bytes. Compatible with existing hashes.
- // Cloudflare Workers may throw NotSupportedError for pbkdf2Sync and WebCrypto PBKDF2.
- const secret=enc.encode(password), block=new Uint8Array(enc.encode(salt).length+4);
- block.set(enc.encode(salt));block[block.length-1]=1;
- let u=new Uint8Array(createHmac('sha256',secret).update(block).digest());
- const result=u.slice();
- for(let i=1;i<210000;i++){
-  u=new Uint8Array(createHmac('sha256',secret).update(u).digest());
-  for(let j=0;j<32;j++)result[j]^=u[j];
- }
- return bytesToHex(result)
+ // Native asynchronous PBKDF2; preserve existing SHA-256, 210000 iterations, 32-byte hash.
+ return await new Promise((resolve,reject)=>{
+  pbkdf2(password,salt,210000,32,'sha256',(error,key)=>{
+   if(error)reject(error);else resolve(key.toString('hex'));
+  });
+ });
 }
 const json=(obj,status=200,headers={})=>new Response(JSON.stringify(obj),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',...headers}});
 const cookie=(token,maxAge)=>`study_session=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
