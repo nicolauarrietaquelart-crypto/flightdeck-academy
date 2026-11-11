@@ -2,8 +2,7 @@ name = "flightdeck-academy"
 compatibility_date = "2026-11-01"
 pages_build_output_dir = "."
 
-# Create a D1 database, then uncomment and replace database_id.
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "flightdeck-academy-db"
-# database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+[[d1_databases]]
+binding = "DB"
+database_name = "flightdeck-academy-db"
+database_id = "297dd68d-6bce-4898-9239-54b7083c8330"
