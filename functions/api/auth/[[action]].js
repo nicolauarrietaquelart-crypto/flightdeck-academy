@@ -7,11 +7,14 @@ const json=(obj,status=200,headers={})=>new Response(JSON.stringify(obj),{status
 const cookie=(token,maxAge)=>`study_session=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
 async function current(request,db){const token=request.headers.get('Cookie')?.match(/(?:^|;\s*)study_session=([a-f0-9]{64})/)?.[1];if(!token)return null;return db.prepare('SELECT users.id,users.username,users.email FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires_at>?').bind(await digest(token),Date.now()).first()}
 export async function onRequest(context){
- try { return await handleAuth(context) } catch (error) { console.error('FlightDeck authentication failure:', error); return json({error:'Authentication service error. Verify that D1 migrations have been applied and try again.'},500) }
+ try { return await handleAuth(context) } catch (error) { const stage=context.__authStage||'initialization'; const diagnostic=error?.name||'UnknownError'; console.error('FlightDeck authentication failure:',stage,diagnostic,error); return json({error:'Authentication service error ('+stage+' / '+diagnostic+'). Please contact support.'},500) }
 }
-async function handleAuth({request,env,params}){
+async function handleAuth(context){
+ const {request,env,params}=context;
+ const setStage=(stage)=>{context.__authStage=stage};
  const db=env.DB;if(!db)return json({error:'Database not configured. Bind a D1 database as DB.'},503);
- const action=params.action?.[0]||'';const method=request.method;
+ const action=params.action?.[0]||'';const method=request.method;setStage('routing');
+
  if(method==='GET'&&action==='me'){const user=await current(request,db);return json({user:user||null})}
  if(method!=='POST')return json({error:'Method not allowed'},405);
  if(request.headers.get('Content-Type')?.split(';')[0]!=='application/json')return json({error:'JSON required'},415);
@@ -27,9 +30,9 @@ async function handleAuth({request,env,params}){
   return await issueSession(db,id,username,email)
  }
  if(action==='login'){
-  const user=await db.prepare('SELECT * FROM users WHERE username=?').bind(username).first();if(!user)return json({error:'Invalid username or password'},401);
-  const hash=await passwordHash(password,user.salt);if(hash!==user.password_hash)return json({error:'Invalid username or password'},401);
-  return await issueSession(db,user.id,user.username,user.email)
+  setStage('login-database-lookup');const user=await db.prepare('SELECT * FROM users WHERE username=?').bind(username).first();if(!user)return json({error:'Invalid username or password'},401);
+  setStage('login-password-verification');const hash=await passwordHash(password,user.salt);if(hash!==user.password_hash)return json({error:'Invalid username or password'},401);
+  setStage('login-session-creation');return await issueSession(db,user.id,user.username,user.email)
  }
  const user=await current(request,db);if(!user)return json({error:'Not authenticated'},401);
  if(action==='logout'){
