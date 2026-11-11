@@ -152,7 +152,8 @@ async function syncCloudProgress(){
     }
     cloudReady=true;return;
    }
-   const remoteWasReset=!!stored?.resetMarker&&stored.resetMarker!==cloudResetMarker;\n   const payload=cloudResetPending?{attempts:[],seen:{},draft:null,resetMarker:String(Date.now())}:{
+   const remoteWasReset=!!stored?.resetMarker&&stored.resetMarker!==cloudResetMarker;
+   const payload=cloudResetPending?{attempts:[],seen:{},draft:null,resetMarker:String(Date.now())}:{
     attempts:mergeAttempts(stored?.attempts,remoteWasReset?[]:db.attempts),
     seen:{...(stored?.seen||{}),...(remoteWasReset?{}:db.seen)},
     draft:localDraft()
