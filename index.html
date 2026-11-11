@@ -135,7 +135,8 @@ async function syncCloudProgress(){
  finally{cloudBusy=false}
 }
 function scheduleCloudSync(){if(cloudTimer)clearTimeout(cloudTimer);cloudTimer=setTimeout(syncCloudProgress,1200)}
-\n// Single shared progress: no login. Visitors share the same cloud data.
+
+// Single shared progress: no login. Visitors share the same cloud data.
 // Migrate previously saved NICO data on this browser, without overwriting existing progress.
 function initializeLocalStudy(){
  try{
