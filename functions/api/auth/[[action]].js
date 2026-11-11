@@ -1,8 +1,9 @@
+import { pbkdf2Sync } from 'node:crypto';
 const enc = new TextEncoder();
 const bytesToHex = b => [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
 const randomHex = n => bytesToHex(crypto.getRandomValues(new Uint8Array(n)));
 const digest = async x => bytesToHex(await crypto.subtle.digest('SHA-256',enc.encode(x)));
-async function passwordHash(password,salt){const key=await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveBits']);return bytesToHex(await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(salt),iterations:210000,hash:'SHA-256'},key,256))}
+async function passwordHash(password,salt){return pbkdf2Sync(password,salt,210000,32,'sha256').toString('hex')}
 const json=(obj,status=200,headers={})=>new Response(JSON.stringify(obj),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',...headers}});
 const cookie=(token,maxAge)=>`study_session=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
 async function current(request,db){const token=request.headers.get('Cookie')?.match(/(?:^|;\s*)study_session=([a-f0-9]{64})/)?.[1];if(!token)return null;return db.prepare('SELECT users.id,users.username,users.email FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires_at>?').bind(await digest(token),Date.now()).first()}
