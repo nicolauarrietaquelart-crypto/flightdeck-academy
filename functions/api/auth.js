@@ -9,7 +9,7 @@ async function setup(db){await db.prepare('CREATE TABLE IF NOT EXISTS flightdeck
 function cookie(request){return (request.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('fd_session='))?.slice(11)||''}
 async function currentUser(db,request){const token=cookie(request);if(!/^[a-f0-9]{64}$/.test(token))return null;const hash=await digest(token);return db.prepare('SELECT u.id,u.username FROM flightdeck_sessions s JOIN flightdeck_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?').bind(hash,Date.now()).first()}
 const cookieSet=(token,maxAge)=>'fd_session='+token+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age='+maxAge;
-export async function onRequest(context){
+async function handleAuth(context){
  const db=context.env.DB;if(!db)return json({error:'Database unavailable'},503);
  try{
  await setup(db);
@@ -36,3 +36,7 @@ export async function onRequest(context){
  return json({user},200,{'set-cookie':cookieSet(token,30*86400)});
  }catch(e){return json({error:'Authentication unavailable'},500)}
 }
+
+// Explicit method handlers avoid Pages route/method mismatches.
+export async function onRequestGet(context){return handleAuth(context)}
+export async function onRequestPost(context){return handleAuth(context)}
