@@ -25,13 +25,13 @@ async function handleAuth(context){
  if((!validUsername&&!validEmail)||password.length<10||password.length>128)return json({error:'Enter a valid username or email and a password of at least 10 characters.'},400);
  let user;
  if(action==='register'){
-  stage='password hashing';const salt=random(),id=crypto.randomUUID(),hash=await passwordHash(password,salt);stage='account creation';
+  stage='secure random generation';const salt=random();stage='account identifier generation';const id=crypto.randomUUID();stage='PBKDF2 password derivation';const hash=await passwordHash(password,salt);stage='account creation';
   try{await db.prepare('INSERT INTO flightdeck_users (id,username,salt,password_hash,created_at) VALUES (?,?,?,?,?)').bind(id,username,salt,hash,new Date().toISOString()).run()}catch{return json({error:'Username already taken'},409)}
   user={id,username};
  }else if(action==='login'){
   const row=await db.prepare('SELECT * FROM flightdeck_users WHERE username=?').bind(username).first();
   if(!row)return json({error:'Invalid username or password'},401);
-  const hash=await passwordHash(password,row.salt);if(!equal(hash,row.password_hash))return json({error:'Invalid username or password'},401);
+  stage='PBKDF2 password verification';const hash=await passwordHash(password,row.salt);if(!equal(hash,row.password_hash))return json({error:'Invalid username or password'},401);
   user={id:row.id,username:row.username};
  }else return json({error:'Invalid action'},400);
  stage='session creation';const token=random();await db.prepare('INSERT INTO flightdeck_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)').bind(await digest(token),user.id,Date.now()+30*86400000).run();
