@@ -234,7 +234,7 @@ function authScreen(register=false,message=''){
  document.getElementById('auth-error').textContent=message;
  document.getElementById('auth-form').onsubmit=async e=>{
   e.preventDefault();const form=e.currentTarget,btn=form.querySelector('button[type=submit]');btn.disabled=true;btn.textContent='Please wait…';
-  try{const res=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:register?'register':'login',username:form.elements.namedItem('username').value,password:form.elements.namedItem('password').value})});const raw=await res.text();let data;try{data=JSON.parse(raw)}catch{throw Error('Account server returned HTTP '+res.status+' instead of JSON. Check Cloudflare Pages Functions and Access settings.')}if(!res.ok)throw Error((data.error||'Account server error')+' (HTTP '+res.status+')');if(!data.user?.id)throw Error('Server did not return a valid session');startAccount(data.user)}
+  try{const res=await fetch('/api/flightdeck-session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:register?'register':'login',username:form.elements.namedItem('username').value,password:form.elements.namedItem('password').value})});const raw=await res.text();let data;try{data=JSON.parse(raw)}catch{throw Error('Account server returned HTTP '+res.status+' instead of JSON. Check Cloudflare Pages Functions and Access settings.')}if(!res.ok)throw Error((data.error||'Account server error')+' (HTTP '+res.status+')');if(!data.user?.id)throw Error('Server did not return a valid session');startAccount(data.user)}
   catch(err){document.getElementById('auth-error').textContent=err.message;btn.disabled=false;btn.textContent=register?'Create account':'Sign in'}
  };
 }
@@ -244,12 +244,12 @@ function startAccount(account){
  initializeLocalStudy();
 }
 async function checkLogin(){
- try{const response=await fetch('/api/auth',{cache:'no-store'});const raw=await response.text();let data;try{data=JSON.parse(raw)}catch{throw Error('Account API returned HTTP '+response.status+' instead of JSON. Check Pages Functions deployment and Cloudflare Access.')}if(!response.ok)throw Error((data.error||'Account API error')+' (HTTP '+response.status+')');if(data.user)startAccount(data.user);else authScreen()}
+ try{const response=await fetch('/api/flightdeck-session',{cache:'no-store'});const raw=await response.text();let data;try{data=JSON.parse(raw)}catch{throw Error('Account API returned HTTP '+response.status+' instead of JSON. Check Pages Functions deployment and Cloudflare Access.')}if(!response.ok)throw Error((data.error||'Account API error')+' (HTTP '+response.status+')');if(data.user)startAccount(data.user);else authScreen()}
  catch(err){authScreen(false,err.message||'Unable to reach the account server')}
 }
 async function logoutAccount(){
  if(session)persistDraft();
- try{await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'logout'})})}catch{}
+ try{await fetch('/api/flightdeck-session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'logout'})})}catch{}
  if(cloudTimer)clearTimeout(cloudTimer);cloudDirty=false;cloudResetPending=false;user=null;session=null;stopTimer();authScreen();
 }
 
