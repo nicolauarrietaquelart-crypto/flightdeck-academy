@@ -108,11 +108,11 @@ const questionGroup=q=>q.source==='sop5'&&!/^SOP(?:\s|$)/i.test(q.category)?'tec
 const gname=id=>GROUPS.find(g=>g[0]===id)?.[1]||id;
 const isWritten=q=>q.type==='flashcard'||/WRITE BY HAND|WRITE YOUR ANSWER/i.test(q.question);
 const topics=()=>cfg.group==='sop'?[]:[...new Set(BANK.filter(q=>questionGroup(q)===cfg.group).map(q=>q.category))];
-const pool=()=>BANK.filter(q=>questionGroup(q)===cfg.group&&(!cfg.topics.length||cfg.topics.includes(q.category))&&(cfg.seenFilter==='all'||(cfg.seenFilter==='unseen'?!db.seen[q.id]:!!db.seen[q.id])));
+const pool=()=>BANK.filter(q=>questionGroup(q)===cfg.group&&(cfg.group==='sop'||cfg.topics.includes(q.category))&&(cfg.seenFilter==='all'||(cfg.seenFilter==='unseen'?!db.seen[q.id]:!!db.seen[q.id])));
 const shuffle=a=>[...a].sort(()=>Math.random()-.5);
 let page='home',session=null,tick=null,reviewAttempt=null,historyFilter='all';let cfg={mode:'practice',group:'tech',count:30,topics:[],seenFilter:'all'};
 function nav(){let links=[['home','Home'],['setup','New test'],['history','History'],['analysis','Statistics'],['settings','Settings']];$('nav').innerHTML=links.map(([id,label])=>`<button class="nav ${page===id?'active':''}" onclick="go('${id}')">${ICONS[id]}<span>${label}</span></button>`).join('');$('mobile').innerHTML=links.map(([id,label])=>`<button class="${page===id?'active':''}" onclick="go('${id}')">${ICONS[id]}<span>${label}</span></button>`).join('')}
-function go(p){if(session&&p!=='quiz')persistDraft();page=p;render()}
+function go(p){if(session&&p!=='quiz')persistDraft();if(p==='setup'&&page!=='setup'&&cfg.group!=='sop'&&!cfg.topics.length)cfg.topics=topics();page=p;render()}
 function head(k,t,s){return `<div class="eyebrow">${k}</div><h1 class="heading">${t}</h1><div class="muted">${s}</div>`}
 function render(){if(!user)return;nav();({home,setup,quiz:quizView,history,analysis,settings,result})[page]?.();animateStudyContent()}
 function stats(){
@@ -137,7 +137,7 @@ function stats(){
  return {seen:seen.size,correct,wrong,answers:seen.size,accuracy:seen.size?Math.round(correct/seen.size*100):0,attempts:attempts.length,mocks:attempts.filter(a=>a.mode==='mock'&&a.score>=75).length,streak};
 }
 function home(){let s=stats();let metrics=[['eye','Questions seen',s.seen,`${BANK.length} available`],['check','Correct answers',s.correct,'Unique questions answered correctly'],['target','Accuracy',s.accuracy+'%',`${s.correct} correct · ${s.seen} seen`],['layers','Completed tests',s.attempts,'Practice and mock exams'],['trophy','Mocks passed',s.mocks,'Passing score: 75%'],['clock','Study streak',s.streak+' days','Consecutive days with completed tests']];$('app').innerHTML=head('B737 QUESTION BANK','Your flight deck study hub','Train smarter. Track progress. Build confidence.')+(session?unfinishedCard():'')+`<div class="hero"><div class="eyebrow">WELCOME ABOARD · FLIGHTDECK</div><h2>Prepare for your next flight</h2><p class="muted">Choose a topic for instant feedback, or sit a timed 60-minute mock exam.</p><div class="toolbar"><button class="btn" onclick="startSetup('practice')">Start practice →</button><button class="btn secondary" onclick="startSetup('mock')">Mock exam · 60 min</button></div></div><div class="section">Your progress</div><div class="statsgrid">${metrics.map(([icon,label,val,detail])=>`<div class="card"><div class="metric"><div><div class="small">${label}</div><div class="stat">${val}</div></div>${ICONS[icon]}</div><div class="small">${detail}</div></div>`).join('')}</div><div class="section">Question banks</div>${GROUPS.map(([id,label,desc])=>`<button class="source" onclick="choose('${id}')"><span><strong>${label}</strong><small>${desc} · ${BANK.filter(q=>questionGroup(q)===id).length} questions</small></span><span class="tag">STUDY →</span></button>`).join('')}<div class="footer">Question answers are sourced from the uploaded practice banks, not independently validated. Always reference current FCOM, QRH and operator procedures.</div>`}
-function choose(id){cfg.group=id;cfg.topics=[];page='setup';render()}function startSetup(m){cfg.mode=m;page='setup';render()}
+function choose(id){cfg.group=id;cfg.topics=id==='sop'?[]:topics();page='setup';render()}function startSetup(m){cfg.mode=m;cfg.topics=cfg.group==='sop'?[]:topics();page='setup';render()}
 function topicIcon(name){
  const n=String(name).toLowerCase();
  const paths=[
@@ -174,7 +174,7 @@ function refreshSetupFilters(){
  const start=document.querySelector('.setup-start-button');if(start)start.disabled=!available;
 }
 function setMode(m){cfg.mode=m;setup()}
-function setGroup(g){cfg.group=g;cfg.topics=[];setup()}
+function setGroup(g){cfg.group=g;cfg.topics=g==='sop'?[]:topics();setup()}
 function toggleAllTopics(){
  const all=topics(),fullySelected=all.length>0&&all.every(t=>cfg.topics.includes(t));
  cfg.topics=fullySelected?[]:[...all];
