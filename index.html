@@ -375,7 +375,7 @@ async function syncCloudProgress(){
    }
    const remoteWasReset=!!stored?.resetMarker&&stored.resetMarker!==cloudResetMarker;
    const payload=cloudResetPending?{attempts:[],seen:{},draft:null,resetMarker:String(Date.now())}:{
-    attempts:mergeAttempts(stored?.attempts,remoteWasReset?[]:db.attempts),deletedAttemptIds,
+    attempts:mergeAttempts(stored?.attempts,remoteWasReset?[]:db.attempts),deletedAttemptIds,deletedPracticeIds,
     seen:{...(stored?.seen||{}),...(remoteWasReset?{}:db.seen)},
     draft:localDraft()?.mode==='mock'?localDraft():null,
     pendingPractices:mergePendingDrafts(mergePendingDrafts(stored?.pendingPractices,stored?.draft?.mode==='practice'?[stored.draft]:[]),pendingPractices.map(serializedTest))
