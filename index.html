@@ -164,7 +164,7 @@ function loadImportedQuestions(){try{let incoming=JSON.parse(localStorage.getIte
 async function importQuestions(file){if(!file)return;try{const parsed=JSON.parse(await file.text());if(!Array.isArray(parsed))throw Error('Expected an array of questions');let old=JSON.parse(localStorage.getItem(IMPORT_BANK_KEY)||'[]');let known=new Set(BANK.map(q=>q.id));let valid=[];for(let q of parsed){if(q&&typeof q.id==='string'&&typeof q.question==='string'&&Array.isArray(q.options)&&Number.isInteger(q.answer)&&q.answer>=0&&q.answer<q.options.length&&!known.has(q.id)){valid.push(q);known.add(q.id)}}if(!valid.length){alert('No new questions found. They may already be imported.');return}localStorage.setItem(IMPORT_BANK_KEY,JSON.stringify([...old,...valid]));BANK.push(...valid);alert('Imported '+valid.length+' questions: '+valid.filter(q=>q.source==='importTECH').length+' Technical and '+valid.filter(q=>q.source==='importSOP').length+' SOP.');render()}catch(e){alert('Import failed: '+e.message)}}
 const KEY='b737academy_v2';let user=null,db={attempts:[],seen:{}};function accountKey(){return user?'b737academy_account_'+user.id:KEY}function loadAccount(){try{let x=JSON.parse(localStorage.getItem(accountKey()));db=x&&Array.isArray(x.attempts)?x:{attempts:[],seen:{}}}catch{db={attempts:[],seen:{}}}if(!db.seen||typeof db.seen!=='object')db.seen={}}
 const DRAFT_KEY='b737academy_active_v1';function draftKey(){return user?'b737academy_draft_'+user.id:DRAFT_KEY}
-const save=()=>{try{localStorage.setItem(accountKey(),JSON.stringify(db));if(!cloudBusy)scheduleCloudSync()}catch(e){alert('Unable to save data. Please export a backup.')}};
+const save=()=>{try{localStorage.setItem(accountKey(),JSON.stringify(db));scheduleCloudSync()}catch(e){alert('Unable to save data. Please export a backup.')}};
 const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const grp=id=>id==='sop123'||id==='sop4'||id==='sop5'||id==='importSOP'?'sop':id==='tech1'||id==='tech2'||id==='importTECH'?'tech':id;
 const questionGroup=q=>q.source==='sop5'&&!/^SOP(?:\s|$)/i.test(q.category)?'tech':grp(q.source);
@@ -263,12 +263,12 @@ function serializedTest(t){return {...t,questions:t.questions.map(q=>typeof q===
 function normalizePracticeDraft(d){if(!d||d.mode!=='practice'||!Array.isArray(d.questions)||!Array.isArray(d.answers))return null;const questions=d.questions.map(id=>BANK.find(q=>String(q.id)===String(typeof id==='object'?id.id:id)));if(questions.some(q=>!q)||questions.length!==d.answers.length)return null;return {...d,questions,written:d.written||{},selfGrades:d.selfGrades||{},multiSelections:d.multiSelections||{},i:Math.min(Math.max(Number(d.i)||0,0),questions.length-1)}}
 function pendingKey(){return draftKey()+'_practices_v2'}
 function savePendingPractices(sync=true){try{localStorage.setItem(pendingKey(),JSON.stringify(pendingPractices.map(serializedTest)));if(sync)scheduleCloudSync()}catch(e){console.warn('Pending tests could not be saved',e)}}
-function loadPendingPractices(){try{const stored=JSON.parse(localStorage.getItem(pendingKey())||'[]');pendingPractices=Array.isArray(stored)?stored.map(normalizePracticeDraft).filter(Boolean):[]}catch(e){pendingPractices=[]}}
+function loadPendingPractices(){try{const stored=JSON.parse(localStorage.getItem(pendingKey())||'[]');pendingPractices=mergePendingDrafts(stored,[]).map(normalizePracticeDraft).filter(Boolean)}catch(e){pendingPractices=[]}}
 function keepCurrentPractice(){if(!session||session.mode!=='practice')return;pendingPractices=pendingPractices.filter(t=>String(t.id)!==String(session.id));pendingPractices.push(session);savePendingPractices()}
 function pendingPracticeList(){return [...pendingPractices,...(session?.mode==='practice'&&!pendingPractices.some(t=>String(t.id)===String(session.id))?[session]:[])].sort((a,b)=>(b.updated||b.started)-(a.updated||a.started))}
 function pendingPracticeCards(){return pendingPracticeList().map(t=>{const answered=t.answers.filter(x=>x!==null).length;return `<div class="compact-pending" data-practice-id="${String(t.id)}"><div class="pending-main"><div><span class="tag">IN PROGRESS</span><h3>${esc(gname(t.group))} · Practice</h3><p class="small">${answered}/${t.questions.length} answered · Started ${new Date(t.started).toLocaleDateString('en-GB')}</p></div><div class="pending-actions"><button type="button" class="btn" onclick="resumePractice('${String(t.id)}')">Continue →</button><button type="button" class="btn ghost" onclick="discardPractice('${String(t.id)}')">Discard</button></div></div><div class="progress"><div style="width:${Math.round(answered/t.questions.length*100)}%"></div></div></div>`}).join('')}
 function latestPendingPractice(){const t=pendingPracticeList()[0];if(!t)return '';const answered=t.answers.filter(x=>x!==null).length;return `<div class="latest-pending"><div><span class="tag">CONTINUE STUDYING</span><h3>${esc(gname(t.group))} · Practice</h3><p class="small">${answered}/${t.questions.length} answered</p></div><button type="button" class="btn" onclick="resumePractice('${String(t.id)}')">Continue →</button></div>`}
-function resumePractice(id){const found=pendingPractices.find(t=>String(t.id)===String(id))||(session?.mode==='practice'&&String(session.id)===String(id)?session:null);if(!found)return;if(session?.mode==='practice'&&String(session.id)!==String(id))keepCurrentPractice();if(session?.mode==='mock'&&session.deadline>Date.now()&&!confirm('Leave the timed mock exam? Its countdown will continue.'))return;session=found;page='quiz';questionNavPage=Math.floor(session.i/20);persistDraft();render();startTimer()}
+function resumePractice(id){const found=pendingPractices.find(t=>String(t.id)===String(id))||(session?.mode==='practice'&&String(session.id)===String(id)?session:null);if(!found)return;if(session?.mode==='practice'&&String(session.id)!==String(id))keepCurrentPractice();if(session?.mode==='mock'&&session.deadline>Date.now()&&!confirm('Leave the timed mock exam? Its countdown will continue.'))return;session=found;page='quiz';questionNavPage=Math.floor(session.i/20);persistDraft();render();startTimer();maybeAutoFinishPractice()}
 function discardPractice(id){const key=String(id);const card=document.querySelector('[data-practice-id="'+key+'"]');if(card){card.classList.add('discard-removing');card.querySelectorAll('button').forEach(b=>b.disabled=true)}deletedPracticeIds=[...new Set([...deletedPracticeIds,key])];localStorage.setItem('flightdeck_deleted_practices',JSON.stringify(deletedPracticeIds));pendingPractices=pendingPractices.filter(t=>String(t.id)!==key);if(session?.mode==='practice'&&String(session.id)===key){session=null;clearDraft()}savePendingPractices();setTimeout(()=>{if(page==='history')history();else render()},280)}
 function setMockMinutes(value){cfg.mockMinutes=Math.max(5,Math.min(180,Number(value)||60));const el=$('mock-minutes-value');if(el)el.textContent=cfg.mockMinutes+' min'}
 function begin(){if(session?.mode==='practice')keepCurrentPractice();if(session?.mode==='mock'&&session.deadline>Date.now()&&!confirm('A timed mock is still running. Start another exam?'))return;stopTimer();session=null;let available=pool();if(!available.length)return;let n=Math.max(1,Math.min(available.length,Math.floor(Number($('count')?.value||cfg.count)||30)));cfg.count=n;questionNavPage=0;const now=Date.now();session={id:now,mode:cfg.mode,group:cfg.group,topics:[...cfg.topics],questions:shuffle(available).slice(0,n),answers:Array(n).fill(null),written:{},selfGrades:{},multiSelections:{},i:0,started:now,deadline:cfg.mode==='mock'?now+cfg.mockMinutes*60000:null};if(cfg.mode==='practice')keepCurrentPractice();page='quiz';persistDraft();render();startTimer()}
@@ -276,7 +276,7 @@ function persistDraft(){if(!session)return;try{session.updated=Date.now();localS
 function clearDraft(){try{localStorage.removeItem(draftKey());scheduleCloudSync()}catch(e){}}
 function stopTimer(){if(tick){clearInterval(tick);tick=null}}
 function startTimer(){stopTimer();if(!session||session.mode!=='mock')return;const update=()=>{if(!session)return;const remaining=session.deadline-Date.now();const el=$('time');if(el){el.textContent=clock(Math.max(0,remaining));el.classList.toggle('danger',remaining<300000)}if(remaining<=0)finish(true)};update();if(session)tick=setInterval(update,1000)}
-function restoreDraft(){loadPendingPractices();try{const d=JSON.parse(localStorage.getItem(draftKey())||'null');if(!d)return;if(d.mode==='practice'){const restored=normalizePracticeDraft(d);if(restored&&!pendingPractices.some(t=>String(t.id)===String(restored.id))){pendingPractices.push(restored);savePendingPractices(false)}session=null;return}if(d.mode==='mock'&&d.deadline>Date.now()){const questions=d.questions.map(id=>BANK.find(q=>String(q.id)===String(typeof id==='object'?id.id:id)));if(questions.every(Boolean)){session={...d,questions,written:d.written||{},selfGrades:d.selfGrades||{}};return}}localStorage.removeItem(draftKey())}catch(e){console.warn('Saved test could not be restored',e)}}
+function restoreDraft(){loadPendingPractices();try{const d=JSON.parse(localStorage.getItem(draftKey())||'null');if(!d)return;if(closedTestIds().has(String(d.id))){localStorage.removeItem(draftKey());return}if(d.mode==='practice'){const restored=normalizePracticeDraft(d);if(restored&&!pendingPractices.some(t=>String(t.id)===String(restored.id))){pendingPractices.push(restored);savePendingPractices(false)}session=null;return}if(d.mode==='mock'&&d.deadline>Date.now()){const questions=d.questions.map(id=>BANK.find(q=>String(q.id)===String(typeof id==='object'?id.id:id)));if(questions.every(Boolean)){session={...d,questions,written:d.written||{},selfGrades:d.selfGrades||{}};return}}localStorage.removeItem(draftKey())}catch(e){console.warn('Saved test could not be restored',e)}}
 function resumeTest(){if(!session)return;page='quiz';questionNavPage=Math.floor(session.i/20);render();startTimer()}
 function discardTest(){if(!session)return;if(session.mode==='practice'){discardPractice(String(session.id));return}if(!confirm('Discard this unfinished mock exam?'))return;session=null;stopTimer();clearDraft();page='history';render()}
 function clock(ms){let sec=Math.ceil(Math.max(0,ms)/1000);return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`}
@@ -312,13 +312,23 @@ function submitMulti(){
  if(session.mode==='practice'&&session.answers[session.i]!==null)return;
  const selected=session.multiSelections?.[session.i]||[];if(!selected.length)return;
  const currentSession=session,currentIndex=session.i,correct=answerCorrect(q,selected);
- session.answers[session.i]=[...selected];db.seen[q.id]=true;save();persistDraft();quizView();
+ session.answers[session.i]=[...selected];db.seen[q.id]=true;save();persistDraft();quizView();if(maybeAutoFinishPractice())return;
  if(currentSession.mode==='practice'&&correct&&currentIndex<currentSession.questions.length-1){setTimeout(()=>{if(session===currentSession&&session.i===currentIndex&&page==='quiz')move(1)},900)}
 }
 let quizNavigationDirection=0;
 function move(d){if(!session)return;const next=Math.max(0,Math.min(session.questions.length-1,session.i+d));if(next===session.i)return;quizNavigationDirection=d>0?1:-1;session.i=next;questionNavPage=Math.floor(next/20);persistDraft();nav();quizView()}
 function confirmFinish(){if(!session)return;if(confirm('Submit and finish this test? Results will be calculated and the test cannot be resumed.'))finish(false)}
-function finish(auto){if(!session)return;let s=session;if(s.mode==='practice'){pendingPractices=pendingPractices.filter(t=>String(t.id)!==String(s.id));savePendingPractices()}session=null;stopTimer();clearDraft();let items=s.questions.map((q,i)=>({qid:q.id,answer:s.answers[i],written:s.written[i]||'',selfGrade:s.selfGrades[i]===true?true:s.selfGrades[i]===false?false:null}));let graded=items.filter((it,i)=>!isWritten(s.questions[i])||it.selfGrade!==null);let correct=graded.filter(it=>{let q=BANK.find(x=>x.id===it.qid);return q&&(isWritten(q)?it.selfGrade===true:answerCorrect(q,it.answer))}).length;let total=s.questions.length,score=graded.length?Math.round(correct/graded.length*100):null;let record={id:s.id,date:new Date().toISOString(),mode:s.mode,group:s.group,source:s.group,topics:s.topics,total,correct,graded:graded.length,score,seconds:Math.round((Date.now()-s.started)/1000),auto,items};db.attempts.unshift(record);items.forEach(it=>{if(it.answer!==null)db.seen[it.qid]=true});save();reviewAttempt=record;page='result';render()}
+function finish(auto){if(!session)return;const s=session;let items=s.questions.map((q,i)=>({qid:q.id,answer:s.answers[i],written:s.written[i]||'',selfGrade:s.selfGrades[i]===true?true:s.selfGrades[i]===false?false:null}));let graded=items.filter((it,i)=>!isWritten(s.questions[i])||it.selfGrade!==null);let correct=graded.filter(it=>{let q=BANK.find(x=>x.id===it.qid);return q&&(isWritten(q)?it.selfGrade===true:answerCorrect(q,it.answer))}).length;let total=s.questions.length,score=graded.length?Math.round(correct/graded.length*100):null;let record={id:s.id,date:new Date().toISOString(),mode:s.mode,group:s.group,source:s.group,topics:s.topics,total,correct,graded:graded.length,score,seconds:Math.round((Date.now()-s.started)/1000),auto,items};db.attempts=[record,...db.attempts.filter(a=>String(a.id)!==String(record.id))];
+ items.forEach(it=>{if(it.answer!==null)db.seen[it.qid]=true});
+ try{localStorage.setItem(completionSyncKey(),JSON.stringify({resetMarker:cloudResetMarker}))}catch(e){console.warn('Unable to queue completed test',e)}
+ save();
+ session=null;stopTimer();clearDraft();
+ if(s.mode==='practice'){
+  pendingPractices=pendingPractices.filter(t=>String(t.id)!==String(s.id));
+  savePendingPractices();
+ }
+ reviewAttempt=record;page='result';render()
+}
 function result(){let r=reviewAttempt;if(!r){page='history';return render()}let pending=r.items.filter(it=>{let q=BANK.find(x=>x.id===it.qid);return q&&isWritten(q)&&it.selfGrade===null}).length;let score=r.score;let status=score===null?'NOT GRADED':score>=75?'PASS':'FAIL';$('app').innerHTML=head('TEST RESULTS','Session completed',new Date(r.date).toLocaleString('en-GB'))+`<div class="hero"><div class="eyebrow">${r.mode==='mock'?'MOCK EXAM':'PRACTICE TEST'}</div><div class="stat ${score===null?'':score>=75?'pass':'fail'}">${score===null?'—':score+'%'} · ${status}</div><p>${r.correct} correct out of ${r.graded??r.total} graded · Pass mark 75% · ${Math.round(r.seconds/60)} min</p>${pending?`<p class="muted">${pending} written answers are awaiting self-assessment. Review them below to complete your grade.</p>`:''}<div class="toolbar"><button class="btn" onclick="retryAttempt(${r.id},'wrong')" ${r.items.some(it=>{const q=BANK.find(x=>x.id===it.qid);return q&&(isWritten(q)?it.selfGrade===false:it.answer!==null&&!answerCorrect(q,it.answer))})?'':'disabled'}>Retry incorrect answers</button><button class="btn secondary" onclick="retryAttempt(${r.id},'all')">Retry same test</button><button class="btn ghost" onclick="go('history')">View history</button></div></div><div class="section">Answer review</div><div class="card">${r.items.map((it,i)=>{let q=BANK.find(x=>x.id===it.qid);if(!q)return '';let written=isWritten(q),ok=written?it.selfGrade:answerCorrect(q,it.answer);return `<div class="review"><div class="topline"><strong>${i+1}. ${esc(q.category)}</strong><span class="${ok===null?'muted':ok?'pass':'fail'}">${ok===null?'Not graded':ok?'✓ Correct':'✕ Incorrect'}</span></div><p>${esc(q.question)}</p><div class="small">Your answer: ${written?esc(it.written||'Not answered'):esc(answerText(q,it.answer))}</div><div class="small">Reference answer: <strong>${esc(referenceText(q))}</strong></div>${q.explanation?`<p class="small">${esc(q.explanation)}</p>`:''}${written?`<div class="toolbar"><button class="btn ${it.selfGrade===true?'':'secondary'}" onclick="gradeResult(${r.id},${i},true)">✓ Correct</button><button class="btn ${it.selfGrade===false?'':'secondary'}" onclick="gradeResult(${r.id},${i},false)">✕ Incorrect</button></div>`:''}</div>`}).join('')}</div>`}
 function retryAttempt(id,selection){
  const attempt=db.attempts.find(x=>x.id===id);if(!attempt)return;
@@ -335,37 +345,70 @@ function history(){let a=db.attempts.filter(x=>historyFilter==='all'||x.mode===h
 function openResult(id){reviewAttempt=db.attempts.find(x=>x.id===id);page='result';render()}
 function analysis(){let groups=GROUPS.map(([id,n])=>{let a=db.attempts.filter(x=>(x.group||grp(x.source))===id),graded=a.reduce((s,x)=>s+(x.graded??x.total),0),correct=a.reduce((s,x)=>s+x.correct,0);return {id,n,attempts:a.length,accuracy:graded?Math.round(correct/graded*100):null}});$('app').innerHTML=head('INSIGHTS','Your statistics','Accuracy and attempts by question bank.')+`<div class="grid">${groups.map(g=>`<div class="card"><div class="small">${esc(g.n)}</div><div class="stat">${g.accuracy===null?'—':g.accuracy+'%'}</div><div class="small">${g.attempts} attempts</div><div class="progress"><div style="width:${g.accuracy||0}%"></div></div><button class="btn ghost" onclick="choose('${g.id}')">Practice →</button></div>`).join('')}</div>`}
 function settings(){$('app').innerHTML=head('PREFERENCES','Settings','Manage your personal study records and account.')+`<div class="card" style="margin-top:22px"><h3>Data & backup</h3><p class="muted">Your attempts, saved tests and statistics sync securely to your account across devices. You can also export a backup.</p><div class="toolbar"><button class="btn secondary" onclick="backup()">Export backup</button><label class="btn secondary" style="cursor:pointer">Import backup<input type="file" accept=".json" hidden onchange="restore(this.files[0])"></label></div><hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h3>Reset statistics</h3><p class="muted">Permanently delete your saved attempts, answer history and progress statistics from your account on all devices. This does not delete the question bank.</p><button class="btn dangerbtn" onclick="resetStats()">Reset all statistics</button><hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h3>Account</h3><p class="muted">Signed in as ${user.username}</p><button class="btn secondary" onclick="logoutAccount()">Sign out</button></div>`}
-function resetStats(){if(!confirm('Delete your account’s cloud test history, answers and statistics on all your devices? This cannot be undone.'))return;if(!confirm('Final confirmation: reset your personal progress on all devices?'))return;db={attempts:[],seen:{}};session=null;stopTimer();cloudResetPending=true;clearDraft();save();page='home';render()}
+function resetStats(){if(!confirm('Delete your account’s cloud test history, answers and statistics on all your devices? This cannot be undone.'))return;if(!confirm('Final confirmation: reset your personal progress on all devices?'))return;db={attempts:[],seen:{}};session=null;stopTimer();localStorage.removeItem(completionSyncKey());cloudResetPending=true;clearDraft();save();page='home';render()}
 function backup(){let blob=new Blob([JSON.stringify({...db,pendingPractices:pendingPractices.map(serializedTest)},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='B737_Study_Backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-async function restore(file){if(!file)return;try{let x=JSON.parse(await file.text());if(!Array.isArray(x.attempts))throw Error();if(confirm('Replace your current records with this backup?')){db={attempts:x.attempts,seen:x.seen||{}};pendingPractices=(x.pendingPractices||[]).map(normalizePracticeDraft).filter(Boolean);savePendingPractices();session=null;stopTimer();clearDraft();save();render()}}catch(e){alert('Invalid backup file')}}
+async function restore(file){if(!file)return;try{let x=JSON.parse(await file.text());if(!Array.isArray(x.attempts))throw Error();if(confirm('Replace your current records with this backup?')){db={attempts:x.attempts,seen:x.seen||{}};pendingPractices=mergePendingDrafts(x.pendingPractices,[]).map(normalizePracticeDraft).filter(Boolean);savePendingPractices();session=null;stopTimer();clearDraft();save();render()}}catch(e){alert('Invalid backup file')}}
 
 /* Shared D1 progress. Server is authoritative after first import. */
-let cloudRevision=0,cloudReady=false,cloudBusy=false,cloudTimer=null,cloudResetPending=false,cloudDirty=false,cloudResetMarker=localStorage.getItem('flightdeck_cloud_reset_marker')||null;
+let cloudRevision=0,cloudReady=false,cloudBusy=false,cloudTimer=null,cloudResetPending=false,cloudDirty=false,cloudEditVersion=0,cloudResetMarker=localStorage.getItem('flightdeck_cloud_reset_marker')||null;
 function localDraft(){try{return JSON.parse(localStorage.getItem(draftKey())||'null')}catch{return null}}
 let deletedPracticeIds=JSON.parse(localStorage.getItem("flightdeck_deleted_practices")||"[]").map(String);
-function mergePendingDrafts(remote,local){const map=new Map();for(const d of [...(Array.isArray(remote)?remote:remote?.mode==='practice'?[remote]:[]),...(local||[])]){if(!d||d.mode!=='practice'||deletedPracticeIds.includes(String(d.id)))continue;const old=map.get(String(d.id));if(!old||(d.updated||d.started||0)>=(old.updated||old.started||0))map.set(String(d.id),d)}return [...map.values()]}
-function applyCloudDraft(d){if(!d)return;if(d.mode==='mock'&&d.deadline>Date.now()&&!session){const questions=d.questions.map(id=>BANK.find(q=>String(q.id)===String(id)));if(questions.every(Boolean)){session={...d,questions,written:d.written||{},selfGrades:d.selfGrades||{}};localStorage.setItem(draftKey(),JSON.stringify(d))}}}
-function applyCloudPending(drafts){pendingPractices=mergePendingDrafts(drafts,pendingPractices.map(serializedTest)).map(normalizePracticeDraft).filter(Boolean);savePendingPractices(false)}
+function completionSyncKey(){return accountKey()+'_completion_sync'}
+function closedTestIds(attempts=db.attempts){
+ return new Set([...deletedPracticeIds,...deletedAttemptIds,...attempts.filter(a=>a?.id!=null).map(a=>String(a.id))]);
+}
+function mergePendingDrafts(remote,local,closed=closedTestIds()){
+ const map=new Map();
+ for(const d of [...(Array.isArray(remote)?remote:[]),...local]){
+  if(!d||d.mode!=='practice'||closed.has(String(d.id)))continue;
+  const key=String(d.id),old=map.get(key);
+  if(!old||(d.updated||d.started||0)>=(old.updated||old.started||0))map.set(key,d);
+ }
+ return [...map.values()];
+}
+function applyCloudDrafts(stored){
+ const closed=closedTestIds(),draft=stored.draft;
+ pendingPractices=mergePendingDrafts(stored.pendingPractices,[draft,...pendingPractices],closed).map(normalizePracticeDraft).filter(Boolean);
+ savePendingPractices(false);
+ const local=localDraft();
+ if(local&&closed.has(String(local.id)))localStorage.removeItem(draftKey());
+ if(session&&closed.has(String(session.id))){
+  session=null;
+  stopTimer();
+  if(page==='quiz')page='history';
+ }
+ if(page!=='quiz'&&!session&&draft?.mode==='mock'&&!closed.has(String(draft.id))&&draft.deadline>Date.now()){
+  const questions=draft.questions.map(id=>BANK.find(q=>String(q.id)===String(typeof id==='object'?id.id:id)));
+  if(questions.every(Boolean)){
+   session={...draft,questions,written:draft.written||{},selfGrades:draft.selfGrades||{}};
+   localStorage.setItem(draftKey(),JSON.stringify(serializedTest(session)));
+  }
+ }
+}
 function cloudPayload(){return {attempts:db.attempts,seen:db.seen,draft:localDraft(),pendingPractices:pendingPractices.map(serializedTest),deletedPracticeIds}}
 let deletedAttemptIds=[];
-function deleteCompletedAttempt(id){const item=db.attempts.find(a=>String(a.id)===String(id));if(!item)return;if(!confirm('Delete this completed test? It will also be removed from your statistics. This cannot be undone.'))return;deletedAttemptIds=[...new Set([...deletedAttemptIds,deletedPracticeIds,String(id)])];db.attempts=db.attempts.filter(a=>String(a.id)!==String(id));if(reviewAttempt&&String(reviewAttempt.id)===String(id))reviewAttempt=null;save();history()}
+function deleteCompletedAttempt(id){const item=db.attempts.find(a=>String(a.id)===String(id));if(!item)return;if(!confirm('Delete this completed test? It will also be removed from your statistics. This cannot be undone.'))return;deletedAttemptIds=[...new Set([...deletedAttemptIds,String(id)])];db.attempts=db.attempts.filter(a=>String(a.id)!==String(id));if(reviewAttempt&&String(reviewAttempt.id)===String(id))reviewAttempt=null;save();history()}
 function mergeAttempts(remote,local){
  const all=new Map();
  for(const a of [...(remote||[]),...(local||[])])if(a&&typeof a==='object'&&!deletedAttemptIds.includes(String(a.id)))all.set(String(a.id??JSON.stringify([a.date,a.group,a.total])),a);
  return [...all.values()].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
 }
 async function syncCloudProgress(){
- if(!user||cloudBusy)return;cloudBusy=true;
+ if(!user||cloudBusy)return;
+ const syncAccount=user;
+ cloudBusy=true;
  try{
   for(let retry=0;retry<3;retry++){
    const response=await fetch('/api/progress',{cache:'no-store'});
    if(!response.ok)throw Error('Cloud sync unavailable: '+response.status);
-   const remote=await response.json();cloudRevision=remote.revision||0;
+   const remote=await response.json();
+   if(user!==syncAccount)return;
+   cloudRevision=remote.revision||0;
    const stored=remote.data;deletedPracticeIds=[...new Set([...deletedPracticeIds,...(stored?.deletedPracticeIds||[]).map(String)])];localStorage.setItem("flightdeck_deleted_practices",JSON.stringify(deletedPracticeIds));deletedAttemptIds=[...new Set([...(stored?.deletedAttemptIds||[]).map(String),...deletedAttemptIds])];
    if(!cloudReady&&!cloudDirty&&!cloudResetPending&&stored){
     db={attempts:(stored.attempts||[]).filter(a=>!deletedAttemptIds.includes(String(a.id))),seen:stored.seen||{}};cloudResetMarker=stored.resetMarker||null;localStorage.setItem('flightdeck_cloud_reset_marker',cloudResetMarker||'');
     localStorage.setItem(accountKey(),JSON.stringify(db));
-    if(Object.prototype.hasOwnProperty.call(stored,'draft'))applyCloudDraft(stored.draft);applyCloudPending(mergePendingDrafts(stored.pendingPractices,stored.draft?.mode==='practice'?[stored.draft]:[]));
+    applyCloudDrafts(stored);
     cloudReady=true;
     if(page!=='quiz')render();
     return;
@@ -375,37 +418,59 @@ async function syncCloudProgress(){
    }
    if(!cloudDirty&&!cloudResetPending){
     if(stored){
-     db={attempts:stored.attempts||[],seen:stored.seen||{}};
+     cloudResetMarker=stored.resetMarker||null;
+     db={attempts:mergeAttempts(stored.attempts,[]),seen:stored.seen||{}};
      localStorage.setItem(accountKey(),JSON.stringify(db));
-     if(page!=='quiz'&&Object.prototype.hasOwnProperty.call(stored,'draft'))applyCloudDraft(stored.draft);applyCloudPending(mergePendingDrafts(stored.pendingPractices,stored.draft?.mode==='practice'?[stored.draft]:[]));
+     applyCloudDrafts(stored);
      if(page!=='quiz')render();
     }
     cloudReady=true;return;
    }
    const remoteWasReset=!!stored?.resetMarker&&stored.resetMarker!==cloudResetMarker;
-   const payload=cloudResetPending?{attempts:[],seen:{},draft:null,resetMarker:String(Date.now())}:{
-    attempts:mergeAttempts(stored?.attempts,remoteWasReset?[]:db.attempts),deletedAttemptIds,deletedPracticeIds,
+   const version=cloudEditVersion,resetting=cloudResetPending;
+   const attempts=mergeAttempts(stored?.attempts,remoteWasReset?[]:db.attempts);
+   const closed=closedTestIds(attempts),draft=localDraft();
+   const payload=resetting?{attempts:[],seen:{},draft:null,resetMarker:String(Date.now())}:{
+    attempts,deletedAttemptIds,deletedPracticeIds,
     seen:{...(stored?.seen||{}),...(remoteWasReset?{}:db.seen)},
-    draft:localDraft()?.mode==='mock'?localDraft():null,
-    pendingPractices:mergePendingDrafts(mergePendingDrafts(stored?.pendingPractices,stored?.draft?.mode==='practice'?[stored.draft]:[]),pendingPractices.map(serializedTest))
+    draft:draft?.mode==='mock'&&!closed.has(String(draft.id))?draft:null,
+    pendingPractices:mergePendingDrafts(stored?.pendingPractices,[stored?.draft,...pendingPractices.map(serializedTest)],closed),
+    resetMarker:stored?.resetMarker||null
    };
    const written=await fetch('/api/progress',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({revision:cloudRevision,data:payload})});
+   if(user!==syncAccount)return;
    if(written.status===409)continue;
    if(!written.ok)throw Error('Cloud save unavailable: '+written.status);
-   cloudRevision=(await written.json()).revision;
-   db={attempts:payload.attempts,seen:payload.seen};if(payload.pendingPractices)applyCloudPending(payload.pendingPractices);cloudResetMarker=payload.resetMarker||null;localStorage.setItem('flightdeck_cloud_reset_marker',cloudResetMarker||'');
+   const saved=await written.json();
+   if(user!==syncAccount)return;
+   cloudRevision=saved.revision;
+   cloudResetMarker=payload.resetMarker||null;
+   localStorage.setItem('flightdeck_cloud_reset_marker',cloudResetMarker||'');
+   if(version!==cloudEditVersion){
+    if(resetting)cloudResetPending=false;
+    return;
+   }
+   db={attempts:payload.attempts,seen:payload.seen};
+   if(payload.pendingPractices)applyCloudDrafts(payload);
    localStorage.setItem(accountKey(),JSON.stringify(db));
+   localStorage.removeItem(completionSyncKey());
    cloudDirty=false;cloudResetPending=false;cloudReady=true;
    if(page!=='quiz')render();
    return;
   }
   throw Error('Cloud changed during sync; will retry');
  }catch(e){console.warn(e.message)}
- finally{cloudBusy=false;if(cloudDirty||cloudResetPending)scheduleCloudSync()}
+ finally{if(user===syncAccount){cloudBusy=false;if(cloudDirty||cloudResetPending)scheduleCloudSync()}}
 }
-function scheduleCloudSync(){if(!user)return;cloudDirty=true;if(cloudTimer)clearTimeout(cloudTimer);cloudTimer=setTimeout(syncCloudProgress,1400)}
+function scheduleCloudSync(){if(!user)return;cloudDirty=true;cloudEditVersion++;if(cloudTimer)clearTimeout(cloudTimer);cloudTimer=setTimeout(syncCloudProgress,1400)}
 function initializeLocalStudy(){
- loadImportedQuestions();loadAccount();restoreDraft();render();loadRemoteQuestions();syncCloudProgress();
+ loadImportedQuestions();loadAccount();
+ const queuedCompletion=JSON.parse(localStorage.getItem(completionSyncKey())||'null');
+ if(queuedCompletion){
+  cloudDirty=true;
+  cloudResetMarker=queuedCompletion.resetMarker;
+ }
+ restoreDraft();render();loadRemoteQuestions();syncCloudProgress();
  if(!window.flightdeckPolling){window.flightdeckPolling=true;window.addEventListener('focus',()=>{if(user)syncCloudProgress()});document.addEventListener('visibilitychange',()=>{if(user&&!document.hidden)syncCloudProgress()});setInterval(()=>{if(user&&!document.hidden)syncCloudProgress()},30000)}
  if(session)startTimer();
 }
